@@ -1,103 +1,188 @@
 #LOOM
-
 import pyautogui as pg
 import time
-import numpy
+from pynput.mouse import Listener
+import logging
+import re
+
+logging.basicConfig(level=logging.DEBUG)
+
+# TODO if calibration_response == NO (remove end and size() lines)
+# TODO add calibration points into the variables dictionary
+
+calibration_point = None
+calibration_point_coordinates = {
+    'Top left': None,
+    'Top right': None,
+    'Bottom right': None,
+    'Bottom left': None}
+
+
+def on_click(calibration_x, calibration_y, button, pressed):
+    global calibration_point
+    if pressed:
+        calibration_point = None
+        print('Mouse clicked at ({0}, {1})'.format(calibration_x, calibration_y))
+        calibration_point = (calibration_x, calibration_y)
+        return False
+
+
+def calibration_point_set(coordinate):
+    global calibration_point
+    calibration_point_coordinates[coordinate] = calibration_point
+    calibration_point = None
+    return
+
+
+calibration_response = pg.confirm('Would you like to calibrate your screen', 'Calibration Query', buttons=['Yes', 'No'])
+if calibration_response == 'Yes':
+    pg.alert(text='Please confirm then click on the Top Left corner', title='Confirmation', button='OK')
+    for points in calibration_point_coordinates:
+        Listener(on_click=on_click).start()
+        try:
+            while calibration_point_coordinates[points] is None:
+                time.sleep(0.5)
+                if calibration_point is not None:
+                    calibration_point_set(points)
+            if points != 'Bottom left':
+                pg.alert(text= str(points) + ' coordinates captured. Confirm then click on the next clockwise corner',
+                         title='Confirmation', button='OK')
+        except Exception as e:
+            logging.info(e)
+            pass
+    pg.alert(text='All corner coordinates captured:\n' + str(calibration_point_coordinates), title='Success',
+             button='OK')
+else:
+    end_x, end_y = pg.size()
+    calibration_point_coordinates = {
+        'Top left': (0, 0),
+        'Top right': (0, end_y),
+        'Bottom right': pg.size(),
+        'Bottom left': (end_x, 0)}
 start_time = time.time()
-end_x, end_y = pg.size()
+x_points = []
+y_points = []
+for each in calibration_point_coordinates:
+    x_point, y_point = calibration_point_coordinates[each]
+    x_points.append(x_point)
+    y_points.append(y_point)
+
+right_x = max(x_points)
+left_x = min(x_points)
+top_y = max(y_points)
+bottom_y = min(y_points)
 
 #variables
-origin_x, origin_y = 600, 155 #the starting point of the draw
-distance = 40 #how intially big the draw is
-duration = 0.1 #the draw time (0 == 0.1)
-updown = -5 #north south
-leftright = 10 #east west
-NEWS_modifier = 5 #FKA fukitup
-gap = 5 #the gap that reduces distance at each turn
-o_factor = 1 #oblong factor
-steps = (distance/gap)/2
-height = origin_y + (distance - gap) #the intial length of the line after the first turn
-width = origin_x + distance #the intial length of the first line
-stop_here = -80 #either another variable or an integer
+variables_dict = {
+    'turn': 0,
+    'origin_x': None,
+    'origin_y': None,
+    'distance': None,
+    'duration': None,
+    'updown': None,
+    'leftright': None,
+    'NEWS_modifier': None,
+    'gap': None,
+    'oblong_factor': None,
+    'stop_here': None,
+    'mods': None,
+    'draw_these_lines': None,
+    'move_these_lines': None,
+    'cardinal_direction_of_drawing': None
+}
 
-mods = 'on'
-draw_lines = ['N', 'S', 'E']
-move_lines = []#['E', 'W', 'S', 'N']
-cardinal = ['NE', 'SW']
-turn = 0
+with open("config_file.txt") as config_file:
+    for line in config_file:
+       try:
+           (key, val) = line.split(maxsplit=1)
+           float_re = re.findall("\.", val)
+           int_re = re.findall('\d', val)
+       except ValueError:
+           pass
+       if float_re:
+        variables_dict[str(key)] = float(val.strip('\n'))
+       elif int_re:
+           variables_dict[str(key)] = int(val.strip('\n'))
+       else:
+           variables_dict[str(key)] = val.strip('\n')
 
-variableslist = ['origin_x, origin_y = '+str(origin_x)+', '+str(origin_y),
-'distance = '+str(distance),
-'duration = '+str(duration),
-'updown = '+str(updown),
-'leftright = '+str(leftright),
-'NEWS_modifier = '+str(NEWS_modifier),
-'gap = '+str(gap),
-'o_factor = '+str(o_factor),
-'stop_here = '+str(stop_here),
-'mods = '+str(mods),
-'draw_lines = '+str(draw_lines),
-'move_lines = '+str(move_lines),
-'cardinal = '+str(cardinal)]
-
-print('this will take approx ' + str(steps) + ' steps. approx ' + str(steps * max(duration, 0.11) * 4) + ' seconds.')
+steps = (variables_dict['distance'] / variables_dict['gap']) / 2
+height = variables_dict['origin_y'] + (variables_dict['distance'] - variables_dict['gap'])
+width = variables_dict['origin_x'] + variables_dict['distance']
+origin_turn = variables_dict['turn']
+origin_distance = variables_dict['distance']
+print('this will take approx ' + str(steps) + ' steps or approx ' + str(steps * max(variables_dict['duration'], 0.11) * 4) + ' seconds.')
 
 pg.doubleClick(330, 65)
-pg.moveTo(origin_x, origin_y)
+pg.moveTo(variables_dict['origin_x'], variables_dict['origin_y'])
 pg.rightClick()  #click to put drawing program in focus
+end_point_x, end_point_y = pg.position()
 
+while variables_dict['distance'] > variables_dict['stop_here'] and width < right_x and height < top_y \
+        and variables_dict['leftright'] < right_x and variables_dict['updown'] < top_y and \
+        end_point_x < right_x and end_point_y < top_y and end_point_x > left_x and end_point_y > bottom_y:
 
-while distance > stop_here and width < end_x and height < end_y and leftright < end_x and updown < end_y:
-    if 'E' in draw_lines:
-        if turn == 0:
-            pg.dragRel((distance * o_factor) - gap, leftright, duration=duration)  # draw right
-            turn += 1
+    if 'NE' in variables_dict['cardinal_direction_of_drawing']:
+        turn = 1
+
+    if 'E' in variables_dict['draw_these_lines']:
+        if variables_dict['turn'] == 0:
+            pg.dragRel((variables_dict['distance'] * variables_dict['oblong_factor']) - variables_dict['gap'], variables_dict['leftright'], duration=variables_dict['duration'])  # draw right
+            variables_dict['turn'] += 1
         else:
-            pg.dragRel(distance * o_factor, leftright, duration=duration)  # draw right
-    elif 'E' in move_lines:
-        pg.moveRel(distance * o_factor, leftright) #move right
+            pg.dragRel(variables_dict['distance'] * variables_dict['oblong_factor'], variables_dict['leftright'], duration=variables_dict['duration'])  # draw right
+    elif 'E' in variables_dict['move_these_lines']:
+        pg.moveRel(variables_dict['distance'] * variables_dict['oblong_factor'], variables_dict['leftright']) #move right
 
-    if 'NE' in cardinal:
-        distance = distance - gap #this controls NE also turn should be 1
+    if 'NE' in variables_dict['cardinal_direction_of_drawing']:
+        variables_dict['distance'] = variables_dict['distance'] - variables_dict['gap']
 
-    if 'S' in draw_lines:
-        pg.dragRel(updown, distance, duration=duration)   # draw down
-    elif 'S' in move_lines:
-        pg.moveRel(updown, distance)   # draw down
+    if 'S' in variables_dict['draw_these_lines']:
+        pg.dragRel(variables_dict['updown'], variables_dict['distance'], duration=variables_dict['duration'])   # draw down
+    elif 'S' in variables_dict['move_these_lines']:
+        pg.moveRel(variables_dict['updown'], variables_dict['distance'])   # move down
 
-    if 'SE' in cardinal:
-        distance = distance - gap #this controls SE
+    if 'SE' in variables_dict['cardinal_direction_of_drawing']:
+        variables_dict['distance'] = variables_dict['distance'] - variables_dict['gap'] #this controls SE
 
-    if 'W' in draw_lines:
-        pg.dragRel(-distance*o_factor, -leftright, duration=duration)  # draw left
-    elif 'W' in move_lines:
-        pg.moveRel(-distance * o_factor, -leftright)  #move left
+    if 'W' in variables_dict['draw_these_lines']:
+        pg.dragRel(-variables_dict['distance']*variables_dict['oblong_factor'], -variables_dict['leftright'], duration=variables_dict['duration'])  # draw left
+    elif 'W' in variables_dict['move_these_lines']:
+        pg.moveRel(-variables_dict['distance'] * variables_dict['oblong_factor'], -variables_dict['leftright'])  #move left
 
-    if 'SW' in cardinal:
-        distance = distance - gap #this controls SW
+    if 'SW' in variables_dict['cardinal_direction_of_drawing']:
+        variables_dict['distance'] = variables_dict['distance'] - variables_dict['gap'] #this controls SW
 
-    if 'N' in draw_lines:
-        pg.dragRel(-updown, -distance, duration=duration)  # draw up
-    elif 'N' in move_lines:
-        pg.moveRel(-updown,-distance) #move up
+    if 'N' in variables_dict['draw_these_lines']:
+        pg.dragRel(-variables_dict['updown'], -variables_dict['distance'], duration=variables_dict['duration'])  # draw up
+    elif 'N' in variables_dict['move_these_lines']:
+        pg.moveRel(-variables_dict['updown'],-variables_dict['distance']) #move up
 
-    if 'NW' in cardinal:
-        distance = distance - gap #this controls NW
+    if 'NW' in variables_dict['cardinal_direction_of_drawing']:
+        variables_dict['distance'] = variables_dict['distance'] - variables_dict['gap'] #this controls NW
 
-    if mods == 'on':
-        leftright = leftright + NEWS_modifier
-        updown = updown - NEWS_modifier
+    if variables_dict['mods'] == 'on':
+        variables_dict['leftright'] = variables_dict['leftright'] + variables_dict['NEWS_modifier']
+        variables_dict['updown'] = variables_dict['updown'] - variables_dict['NEWS_modifier']
 
-    turn += 1
+    variables_dict['turn'] += 1
 
-    print('turn:       ' + str(turn).rjust(3))
-    print('distance:   ' + str(distance).rjust(3))
-    print('up down:    ' + str(updown).rjust(3))
-    print('left right: ' + str(leftright).rjust(3))
+    print('turn:       ' + str(variables_dict['turn']).rjust(3))
+    print('distance:   ' + str(variables_dict['distance']).rjust(3))
+    print('up down:    ' + str(variables_dict['updown']).rjust(3))
+    print('left right: ' + str(variables_dict['leftright']).rjust(3) + '\n')
+
+    end_point_x, end_point_y = pg.position()
 
 print("seconds taken: ", time.time() - start_time)
 
 logfilename = pg.prompt(text='Would you like to save these variables?',
           title='Would you like to save these variables?' , default='file name')
 if logfilename is not None:
-    numpy.savetxt(logfilename+'.txt', variableslist, fmt="%s", delimiter=',')
+    write_file = open(logfilename+'.txt',"w")
+    variables_dict['turn'] = origin_turn
+    variables_dict['distance'] = origin_distance
+    config_write = str(variables_dict).replace(', ','\n').replace("{","").replace("}","").replace("'","").replace(":","")
+    write_file.write(config_write)
+    write_file.close()
+

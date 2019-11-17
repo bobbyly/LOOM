@@ -1,0 +1,15 @@
+turn 0
+origin_x 800
+origin_y 365
+distance 100
+duration 0.1
+updown 0
+leftright 0
+NEWS_modifier 0
+gap 4
+oblong_factor 1
+stop_here 0
+mods off
+draw_these_lines N/S/E
+move_these_lines W
+cardinal_direction_of_drawing NE/SW
